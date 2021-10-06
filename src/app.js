@@ -1,13 +1,14 @@
 import app from './server'
 import {graphqlHTTP} from 'express-graphql'
 import {buildSchema} from "graphql";
-import mongoose from 'mongoose'
-import dotenv from 'dotenv'
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
 dotenv.config();
 
-app.set('PORT', process.env.PORT || 8000)
+import Event from './models/event';
+import User from './models/user'
 
-const EVENTS = []
+app.set('PORT', process.env.PORT || 8000)
 
 app.use('/graphql', graphqlHTTP({
 	schema: buildSchema(`
@@ -20,11 +21,22 @@ app.use('/graphql', graphqlHTTP({
 			date: String!
 		}
 		
+		type User {
+			_id: ID!
+			email: String!
+			password: String!
+		}
+		
 		input EventInput {
 			title: String!
 			description: String!
 			price: Float!
 			date: String!
+		}
+		
+		input UserInput {
+			email: String!
+			password: String!
 		}
 	
 		type RootQuery {
@@ -32,9 +44,8 @@ app.use('/graphql', graphqlHTTP({
 		}
 		
 		type RootMutation {
-			createEvent(
-				eventInput: EventInput	
-			) : Event
+			createEvent(eventInput: EventInput) : Event
+			createUser(userInput: UserInput): User
 		}	
 		
 		schema {
@@ -44,26 +55,67 @@ app.use('/graphql', graphqlHTTP({
 	`),
 	rootValue: {
 		events: () => {
-			return EVENTS
+			return Event.find().then(response => {
+				return response.map(event =>  {
+					return event
+				})
+			}).catch(error => {
+				throw error
+			})
 		},
-		createEvent: (args) => {
-			const event = {
-				_id: Math.random().toString(),
+		createEvent: async(args) => {
+			const event = new Event({
 				title: args.eventInput.title,
 				description: args.eventInput.description,
 				price: +args.eventInput.price,
-				date: args.eventInput.date
-			}
-			console.log(args)
-			EVENTS.push(event)
-			return event
+				date: new Date(args.eventInput.date),
+				creator: '615cd0fc53cd7a4ce614c210'
+			})
+
+			return event.save().then(result => {
+				return User.findById('615cd0fc53cd7a4ce614c210')
+			}).then(user => {
+				if(user){
+					throw new Error('User exists already')
+				}
+
+				user.createdEvents.push(event)
+				return user.save()
+			}).then(result => {
+				return result
+			}).catch(error => {
+				console.log(error)
+			})
+
+		},
+		createUser: async(args) => {
+
+			return User.findOne({email: args.userInput.email}).then(userFound => {
+				if(userFound) {
+					throw  new Error('User exists already')
+				}
+				/*return function hashed password*/
+				return User.encryptPassword(args.userInput.password)
+			}).then(hashedPassword => {
+				const user = new User({
+					email: args.userInput.email,
+					/*and user the hashed returned*/
+					password: hashedPassword
+				})
+
+				return user.save();
+			}).then(result => {
+				return result
+			}).catch(error => {
+				throw error;
+			})
 		}
 	},
 	graphiql: true
 }))
 
 
-mongoose.connect(`mongodb+srv://${process.env.MONGO_USER}:${process.env.MONGO_PASSWORD}@cluster0.xsr5j.mongodb.net/bookshop?retryWrites=true&w=majority`)
+mongoose.connect(`mongodb+srv://${process.env.MONGO_USER}:${process.env.MONGO_PASSWORD}@cluster0.xsr5j.mongodb.net/${process.env.MONGO_DB}?retryWrites=true&w=majority`)
 	.then(() => app.listen(app.get('PORT'), ()=> {
 		console.log(`Server running on port ${app.get('PORT')} and database is connected`);
 	}))
