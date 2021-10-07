@@ -72,43 +72,49 @@ app.use('/graphql', graphqlHTTP({
 				creator: '615cd0fc53cd7a4ce614c210'
 			})
 
-			return event.save().then(result => {
-				return User.findById('615cd0fc53cd7a4ce614c210')
-			}).then(user => {
-				if(user){
+			let createdEvents;
+
+			return event
+				.save()
+				.then((result) =>
+				{
+					createdEvents = result
+						return User.findById('615cd0fc53cd7a4ce614c210')
+				})
+				.then(user => {
+					if(user){
+						throw new Error('User exists already')
+					}
+
+					user.createdEvents.push(event)
+					return user.save();
+
+				}).then((result) => {
+					return createdEvents
+				})
+				.catch(error => {
+				throw error
+			})
+		},
+		createUser: async(args) => {
+			try{
+				const userFound = await User.findOne({email: args.userInput.email});
+				if(userFound) {
 					throw new Error('User exists already')
 				}
 
-				user.createdEvents.push(event)
-				return user.save()
-			}).then(result => {
-				return result
-			}).catch(error => {
-				console.log(error)
-			})
-
-		},
-		createUser: async(args) => {
-
-			return User.findOne({email: args.userInput.email}).then(userFound => {
-				if(userFound) {
-					throw  new Error('User exists already')
-				}
-				/*return function hashed password*/
-				return User.encryptPassword(args.userInput.password)
-			}).then(hashedPassword => {
-				const user = new User({
+				const newUser = new User({
 					email: args.userInput.email,
-					/*and user the hashed returned*/
-					password: hashedPassword
+					password: await User.encryptPassword(args.userInput.password)
 				})
 
-				return user.save();
-			}).then(result => {
-				return result
-			}).catch(error => {
-				throw error;
-			})
+				const  userSaved = await newUser.save()
+
+				return userSaved
+			}catch (error) {
+				throw new Error('User exists already')
+			}
+
 		}
 	},
 	graphiql: true
